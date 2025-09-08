@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export HF_ENDPOINT=https://hf-mirror.com
+source /etc/network_turbo
+
 timestamp="$(date +%y%m%d%H%M)"
 exp_dir="exp_${timestamp}"
 mkdir -p "${exp_dir}"

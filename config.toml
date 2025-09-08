@@ -1,9 +1,9 @@
 [llm_settings]
-llm = "ollama"
+llm = "openai"
 # openai setting(when llm is openai)
 api_key = "sk-*****"
-api_base = "https://api.deepseek.com/v1"  # https://api.openai.com/v1
-api_name = "deepseek-chat" # gpt-4o deepseek-chat
+api_base = "https://dashscope.aliyuncs.com/compatible-mode/v1"  # https://api.openai.com/v1
+api_name = "deepseek-r1-distill-llama-70b" # gpt-4o deepseek-chat
 auth_token = "hf_xxx"
 temperature = 0
 # huggingface setting(when llm is huggingface)
@@ -41,7 +41,7 @@ breakpoint_percentile_threshold = 95
 
 [dataset_settings]
 dataset_type = "local"
-persist_dir = "storage"
+persist_dir = "test_storage"
 # if dataset_type is huggingface
 dataset = "hotpot_qa"
 dataset_download_timeout = 300 # seconds
@@ -126,9 +126,9 @@ metrics = ["NLG_chrf", "NLG_meteor", "NLG_wer", "NLG_cer", "NLG_chrf_pp","NLG_pe
 
 [seper]
 # SePer (Semantic Perplexity) metric configuration
-enabled = false
-generation_model = "meta-llama/Llama-2-7b-chat-hf"
-entailment_model = "microsoft/deberta-v2-xlarge-mnli"
+enabled = true
+generation_model = "models/llama"
+entailment_model = "models/deberta"
 device = "cuda"
 num_generations = 10
 temperature = 1.0
@@ -145,10 +145,10 @@ refine_template_path = "src/xrag/prompts/refine_template.txt"
 
 
 [self_rag]
-enabled = false # when enabled, ignore other config sections and use self-rag
+enabled = true # when enabled, ignore other config sections and use self-rag
 model_name = "selfrag/selfrag_llama2_7b"
 retriever_model = "facebook/contriever-msmarco"
-download_dir = ""
+download_dir = "models/self_rag"
 dtype = "half"
 temperature = 0.0
 top_p = 1.0

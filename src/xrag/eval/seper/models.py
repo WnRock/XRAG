@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 from ...utils import get_module_logger
 from typing import List, Tuple, Optional, Dict
-from transformers import (
+from modelscope import (
     AutoTokenizer,
     AutoModelForCausalLM,
     AutoModelForSequenceClassification,
