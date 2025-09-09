@@ -19,6 +19,7 @@ import numpy as np
 import torch
 from ..self_rag import SelfRAGPipeline
 from llama_index.core.schema import NodeWithScore, TextNode
+from ..adaptive_rag.engine import AdaptiveRAG
 def seed_everything(seed):
     random.seed(seed)
     np.random.seed(seed)
@@ -155,6 +156,47 @@ def eval_self_rag(qa_dataset):
         evaluateResults.add(eval_result)
         evaluateResults.print_results()
     return evaluateResults
+def eval_adaptive_rag(qa_dataset, index):
+    cfg = Config()
+
+    engine = AdaptiveRAG(index=index, config=cfg)
+    evaluateResults = EvaluationResult(metrics=cfg.metrics)
+    evalAgent = EvalModelAgent(cfg)
+
+    class _AdaptiveAdapter:
+        def __init__(self, underlying):
+            # underlying is the response_obj returned by strategy
+            self.response = getattr(underlying, "response", getattr(underlying, "text", ""))
+            self.source_nodes = getattr(underlying, "source_nodes", [])
+
+    total = cfg.test_init_total_number_documents if not cfg.experiment_1 else min(
+        cfg.test_init_total_number_documents, len(qa_dataset['test_data']['question'])
+    )
+
+    for question, expected_answer, golden_context, golden_context_ids in zip(
+            qa_dataset['test_data']['question'][:total],
+            qa_dataset['test_data']['expected_answer'][:total],
+            qa_dataset['test_data']['golden_context'][:total],
+            qa_dataset['test_data']['golden_context_ids'][:total]
+    ):
+        out = engine.query(question)
+        underlying = out.get("response_obj")
+        adapter = _AdaptiveAdapter(underlying)
+        retrieval_ids = []
+        retrieval_context = []
+        for node_with_score in adapter.source_nodes:
+            try:
+                retrieval_ids.append(node_with_score.node.metadata.get('id'))
+                retrieval_context.append(node_with_score.node.get_content())
+            except Exception:
+                pass
+        actual_response = adapter.response
+        eval_result = evaluating(question, adapter, actual_response, retrieval_context, retrieval_ids,
+                                 expected_answer, golden_context, golden_context_ids, evaluateResults.metrics,
+                                 evalAgent)
+        evaluateResults.add(eval_result)
+        evaluateResults.print_results()
+    return evaluateResults
 def run(cli=True, custom_dataset=None):
 
     seed_everything(42)
@@ -173,6 +215,16 @@ def run(cli=True, custom_dataset=None):
         else:
             # Return None for query_engine placeholder plus dataset
             return None, qa_dataset
+
+    if cfg.config.get("adaptive_rag", {}).get("enabled", False):
+        # Need index for retrieval-capable strategies even if simple path occurs
+        index, hierarchical_storage_context = build_index(qa_dataset['documents'])
+        if cli:
+            return eval_adaptive_rag(qa_dataset, index)
+        else:
+            # For interactive usage return engine-like query_engine (AdaptiveRAG instance) and dataset
+            adaptive_engine = AdaptiveRAG(index=index, config=cfg)
+            return adaptive_engine, qa_dataset
 
     index, hierarchical_storage_context = build_index(qa_dataset['documents'])
     query_engine = build_query_engine(index, hierarchical_storage_context)
