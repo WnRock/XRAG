@@ -14,7 +14,7 @@ if [[ ! -f config.toml ]]; then
 fi
 sed -E 's/^(api_key[[:space:]]*=[[:space:]]*)"sk-[^"]*"/\1""/' config.toml > "${exp_dir}/config.toml"
 
-python entry.py run > "${exp_dir}/run.log" 2>&1 || {
+.conda/bin/python entry.py run > "${exp_dir}/run.log" 2>&1 || {
   echo "[error] Command failed; see ${exp_dir}/run.log for details"
   exit 1
 }
