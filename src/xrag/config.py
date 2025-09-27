@@ -93,7 +93,18 @@ def create_default_config(config_file_path):
                 "max_iterations": 3,
                 "retriever_type": "Vector",
                 "max_classification_retries": 3
-            }
+            },
+            "sim_rag": {
+                "enabled": False,
+                "max_turns": 4,
+                "top_k": 2,
+                "use_abstain_first_turn": False,
+                "remove_repeat_docs": False,
+                "gate_model": "dyang39/SIM-RAG-Llama3-2B",
+                "device": "auto",
+                "weighted": False,
+                "max_new_tokens": 1
+            },
         }
         with open(config_file_path, 'w', encoding='utf-8') as f:
             toml.dump(default_config, f)

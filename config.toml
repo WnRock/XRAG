@@ -161,3 +161,15 @@ enabled = false # when enabled, ignore other config sections and use adaptive-ra
 max_iterations = 3
 retriever_type = "Vector"
 max_classification_retries = 3
+
+
+[sim_rag]
+enabled = false
+max_turns = 4
+top_k = 2
+use_abstain_first_turn = false
+remove_repeat_docs = false
+gate_model = "dyang39/SIM-RAG-Llama3-2B"
+device = "auto"
+weighted = false   # if true, returns confidence_0 and confidence_1
+max_new_tokens = 1
