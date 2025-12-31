@@ -11,11 +11,6 @@ logger = get_module_logger(__name__)
 
 @dataclass
 class SamplingParams:
-    """Lightweight replacement for vLLM's SamplingParams.
-
-    Fields used by this module only. Added for interface parity.
-    """
-
     temperature: float = 0.0
     top_p: float = 1.0
     max_tokens: int = 100
@@ -47,7 +42,6 @@ class SelfRAGModel:
             cache_dir = self.self_rag_config.get("download_dir", None)
             dtype = self.self_rag_config.get("dtype", "half")
 
-            # Map dtype strings to torch dtypes
             dtype_map = {
                 "half": torch.float16,
                 "float16": torch.float16,
@@ -65,7 +59,6 @@ class SelfRAGModel:
                 model_name, cache_dir=cache_dir, use_fast=True
             )
             if self.tokenizer.pad_token is None:
-                # Ensure pad token exists for batching (won't influence loss/generation)
                 self.tokenizer.pad_token = self.tokenizer.eos_token
 
             self.model = AutoModelForCausalLM.from_pretrained(
@@ -157,7 +150,6 @@ class SelfRAGModel:
                     pad_token_id=self.tokenizer.pad_token_id,
                     eos_token_id=self.tokenizer.eos_token_id,
                 )
-            # Decode only newly generated tokens per prompt
             responses = []
             for i, prompt in enumerate(prompts):
                 prompt_len = enc.input_ids[i].shape[0]
@@ -227,7 +219,6 @@ class SelfRAGModel:
                     eos_token_id=self.tokenizer.eos_token_id,
                 )
 
-            # outputs.sequences shape: (1, prompt_len + gen_len)
             full_sequence = outputs.sequences[0]
             prompt_len = enc.input_ids.shape[1]
             generated_ids = full_sequence[prompt_len:]
@@ -236,14 +227,12 @@ class SelfRAGModel:
                 skip_special_tokens=self.sampling_params.skip_special_tokens,
             )
 
-            # outputs.scores is a list(len=gen_len) of logits tensors (batch, vocab_size)
             logprobs_list = []
             cumulative_logprob = 0.0
-            top_k_store = 5000  # mimic logprobs=5000 semantics
+            top_k_store = 5000
             for step, (scores_step, token_id) in enumerate(
                 zip(outputs.scores, generated_ids)
             ):
-                # scores_step: (1, vocab_size)
                 probs_log = torch.log_softmax(scores_step[0], dim=-1)
                 chosen_logprob = probs_log[token_id].item()
                 cumulative_logprob += chosen_logprob

@@ -89,7 +89,6 @@ class SelfRAGPipeline:
         retrieved_docs = []
         evidences = []
 
-        # Use external retriever if provided (preferred) else fallback to internal SelfRAGRetriever
         if self.external_retriever is not None:
             try:
                 retrieved_docs = self._external_search(query, n_docs)

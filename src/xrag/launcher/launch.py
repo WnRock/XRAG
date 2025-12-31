@@ -114,7 +114,6 @@ def eval_cli(qa_dataset, query_engine):
 
 def eval_self_rag(qa_dataset):
     cfg = Config()
-    # Build index using same logic as normal run so we share chunking + embeddings
     try:
         index, hierarchical_storage_context = build_index(qa_dataset['documents'])
         external_retriever = get_retriver(cfg.retriever, index, hierarchical_storage_context=hierarchical_storage_context, cfg=cfg)
@@ -130,7 +129,6 @@ def eval_self_rag(qa_dataset):
         def __init__(self, answer, retrieved_docs):
             self.response = answer
             self.source_nodes = []
-            # If we had retrieved docs, wrap them as TextNodes for evaluators that inspect source_nodes
             for d in retrieved_docs:
                 node = TextNode(text=d.get("text", ""), metadata={"id": d.get("id", str(d.get("rank", 0)))})
                 self.source_nodes.append(NodeWithScore(node=node, score=d.get("score", 1.0)))
@@ -166,7 +164,6 @@ def eval_adaptive_rag(qa_dataset, index):
 
     class _AdaptiveAdapter:
         def __init__(self, underlying):
-            # underlying is the response_obj returned by strategy
             self.response = getattr(underlying, "response", getattr(underlying, "text", ""))
             self.source_nodes = getattr(underlying, "source_nodes", [])
 
@@ -214,16 +211,13 @@ def run(cli=True, custom_dataset=None):
         if cli:
             return eval_self_rag(qa_dataset)
         else:
-            # Return None for query_engine placeholder plus dataset
             return None, qa_dataset
 
     if cfg.config.get("adaptive_rag", {}).get("enabled", False):
-        # Need index for retrieval-capable strategies even if simple path occurs
         index, hierarchical_storage_context = build_index(qa_dataset['documents'])
         if cli:
             return eval_adaptive_rag(qa_dataset, index)
         else:
-            # For interactive usage return engine-like query_engine (AdaptiveRAG instance) and dataset
             adaptive_engine = AdaptiveRAG(index=index, config=cfg)
             return adaptive_engine, qa_dataset
 
