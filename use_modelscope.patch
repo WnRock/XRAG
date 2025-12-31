@@ -1,0 +1,13 @@
+diff --git a/src/xrag/eval/seper/models.py b/src/xrag/eval/seper/models.py
+index e571a6e..602bca4 100644
+--- a/src/xrag/eval/seper/models.py
++++ b/src/xrag/eval/seper/models.py
+@@ -4,7 +4,7 @@ import torch
+ import torch.nn.functional as F
+ from ...utils import get_module_logger
+ from typing import List, Tuple, Optional, Dict
+-from transformers import (
++from modelscope import (
+     AutoTokenizer,
+     AutoModelForCausalLM,
+     AutoModelForSequenceClassification,
