@@ -165,7 +165,7 @@ class SelfRAGModel:
             logger.error(f"Error during generation: {e}")
             raise
 
-    def generate_single(self, query: str, paragraph: Optional[str] = None) -> str:
+    def generate_single(self, query: str, paragraph: Optional[str] = None) -> dict:
         """
         Generate a response for a single query.
 
@@ -174,10 +174,20 @@ class SelfRAGModel:
             paragraph (str, optional): Optional retrieved paragraph
 
         Returns:
-            Generated response
+            Dictionary with 'text', 'input_tokens', 'output_tokens', and 'total_tokens'
         """
-        responses = self.generate([query], [paragraph] if paragraph else None)
-        return responses[0]
+        text = self.generate([query], [paragraph] if paragraph else None)[0]
+        
+        prompt = self.format_prompt(query, paragraph)
+        input_tokens = len(self.tokenizer.encode(prompt))
+        output_tokens = len(self.tokenizer.encode(text))
+        
+        return {
+            "text": text,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+        }
 
     def generate_with_logprobs(
         self, query: str, paragraph: Optional[str] = None, max_new_tokens: int = 15
@@ -250,6 +260,9 @@ class SelfRAGModel:
                 "logprobs": logprobs_list,
                 "token_ids": generated_ids.tolist(),
                 "cumulative_logprob": cumulative_logprob,
+                "input_tokens": prompt_len,
+                "output_tokens": len(generated_ids),
+                "total_tokens": prompt_len + len(generated_ids),
             }
             return response
 

@@ -1,7 +1,7 @@
 import numpy as np
 from ..config import Config
 from .model import SelfRAGModel
-from ..utils import get_module_logger
+from ..utils import get_module_logger, get_metrics_logger
 from .retriever import SelfRAGRetriever
 from typing import List, Dict, Any, Optional
 from .utils import SelfRAGResponseParser, SelfRAGTokens
@@ -76,6 +76,8 @@ class SelfRAGPipeline:
         Returns:
             Dictionary containing the response and metadata
         """
+        metrics = get_metrics_logger()
+        
         if n_docs is None:
             n_docs = self.default_n_docs
         if max_new_tokens is None:
@@ -89,6 +91,7 @@ class SelfRAGPipeline:
         retrieved_docs = []
         evidences = []
 
+        metrics.start_timer()
         if self.external_retriever is not None:
             try:
                 retrieved_docs = self._external_search(query, n_docs)
@@ -97,6 +100,9 @@ class SelfRAGPipeline:
                 retrieved_docs = self.retriever.search_documents(query, n_docs)
         else:
             retrieved_docs = self.retriever.search_documents(query, n_docs)
+        retrieval_time = metrics.stop_timer()
+        metrics.log_retrieval(retrieval_time)
+        
         evidences = [
             {"title": doc.get("title", ""), "text": doc.get("text", "")}
             for doc in retrieved_docs
@@ -181,14 +187,23 @@ class SelfRAGPipeline:
         Returns:
             Tuple of (best_response, all_results, do_retrieve)
         """
+        metrics = get_metrics_logger()
         results = {}
 
         ret_tokens, rel_tokens, grd_tokens, ut_tokens = self.model.get_special_tokens()
 
         if mode != "always_retrieve":
+            metrics.start_timer()
             no_retrieval_response = self.model.generate_with_logprobs(
                 prompt, max_new_tokens=max_new_tokens
             )
+            classifier_time = metrics.stop_timer()
+            metrics.log_classifier(classifier_time)
+            
+            # Track token usage from classifier
+            if "total_tokens" in no_retrieval_response:
+                metrics.log_tokens(no_retrieval_response["total_tokens"])
+            
             results["no_retrieval"] = no_retrieval_response["text"]
 
             pred_log_probs = no_retrieval_response.get("logprobs", [])
@@ -231,9 +246,16 @@ class SelfRAGPipeline:
 
             overall_scores = {}
             for p_idx, augmented_prompt in enumerate(evidence_augmented_inputs):
+                metrics.start_timer()
                 response = self.model.generate_with_logprobs(
                     augmented_prompt, max_new_tokens=max_new_tokens
                 )
+                gen_time = metrics.stop_timer()
+                metrics.log_generation(gen_time)
+                
+                # Track token usage from generation
+                if "total_tokens" in response:
+                    metrics.log_tokens(response["total_tokens"])
 
                 pred_text = response["text"]
                 pred_log_probs = response.get("logprobs", [])
@@ -374,11 +396,21 @@ class SelfRAGPipeline:
 
         elif not do_retrieve:
             prompt_no_retrieval = prompt + SelfRAGTokens.NO_RETRIEVAL.value
-            response = self.model.generate_single(prompt_no_retrieval)
+            metrics.start_timer()
+            response_obj = self.model.generate_single(prompt_no_retrieval)
+
+            gen_time = metrics.stop_timer()
+            metrics.log_generation(gen_time)
+            
+            # Track token usage
+            if "total_tokens" in response_obj:
+                metrics.log_tokens(response_obj["total_tokens"])
+            
             # Parse the no-retrieval response
-            parsed_response = self.parser.parse_response(response)
+            response_text = response_obj.get("text", response_obj) if isinstance(response_obj, dict) else response_obj
+            parsed_response = self.parser.parse_response(response_text)
             results["no_retrieval"] = {
-                "pred": response,
+                "pred": response_text,
                 "parsed_metadata": {
                     "relevance": parsed_response["relevance"],
                     "support": parsed_response["support"],

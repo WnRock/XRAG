@@ -21,6 +21,9 @@ from ..sim_rag import run_simrag
 from ..self_rag import SelfRAGPipeline
 from llama_index.core.schema import NodeWithScore, TextNode
 from ..adaptive_rag.engine import AdaptiveRAG
+from ..utils import reset_metrics_logger
+
+
 def seed_everything(seed):
     random.seed(seed)
     np.random.seed(seed)
@@ -114,6 +117,8 @@ def eval_cli(qa_dataset, query_engine):
 
 def eval_self_rag(qa_dataset):
     cfg = Config()
+    metrics = reset_metrics_logger()
+    
     try:
         index, hierarchical_storage_context = build_index(qa_dataset['documents'])
         external_retriever = get_retriver(cfg.retriever, index, hierarchical_storage_context=hierarchical_storage_context, cfg=cfg)
@@ -154,9 +159,12 @@ def eval_self_rag(qa_dataset):
                                  evalAgent)
         evaluateResults.add(eval_result)
         evaluateResults.print_results()
+    
+    metrics.log_summary()
     return evaluateResults
 def eval_adaptive_rag(qa_dataset, index):
     cfg = Config()
+    metrics = reset_metrics_logger()
 
     engine = AdaptiveRAG(index=index, config=cfg)
     evaluateResults = EvaluationResult(metrics=cfg.metrics)
@@ -194,6 +202,8 @@ def eval_adaptive_rag(qa_dataset, index):
                                  evalAgent)
         evaluateResults.add(eval_result)
         evaluateResults.print_results()
+    
+    metrics.log_summary()
     return evaluateResults
 def run(cli=True, custom_dataset=None):
 
@@ -224,6 +234,7 @@ def run(cli=True, custom_dataset=None):
     # If Sim-RAG is enabled (nested section), use its inference pipeline instead of the standard RetrieverQueryEngine
     sim_rag_cfg = cfg.config.get('sim_rag', {}) if hasattr(cfg, 'config') else {}
     if bool(sim_rag_cfg.get('enabled', False)):
+        metrics = reset_metrics_logger()
         evaluateResults = EvaluationResult(metrics=cfg.metrics)
         evalAgent = EvalModelAgent(cfg)
         # Build embeddings/index once to speed up retrieval within Sim-RAG
@@ -253,6 +264,7 @@ def run(cli=True, custom_dataset=None):
                                      evalAgent)
             evaluateResults.add(eval_result)
             evaluateResults.print_results()
+        metrics.log_summary()
         return evaluateResults
     else:
         index, hierarchical_storage_context = build_index(qa_dataset['documents'])

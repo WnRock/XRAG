@@ -2,6 +2,8 @@ from ..llms import get_llm
 from ..config import Config
 from typing import Dict, Optional
 from .query_classifier import QueryComplexityClassifier
+from ..utils import get_metrics_logger
+from .utils import extract_token_usage
 from .strategies import (
     AdaptiveStrategy,
     DirectGenerationStrategy,
@@ -64,10 +66,15 @@ class AdaptiveRAG:
             Dictionary containing response and metadata
         """
         # Classify query complexity
+        metrics = get_metrics_logger()
+        
+        metrics.start_timer()
         if force_strategy and force_strategy in self.strategies:
             complexity = force_strategy
         else:
             complexity = self.classifier.classify(query_str)
+        classifier_time = metrics.stop_timer()
+        metrics.log_classifier(classifier_time)
 
         # Select and execute strategy
         strategy = self.strategies[complexity]
@@ -80,6 +87,10 @@ class AdaptiveRAG:
             response_text = response_obj.text
         else:
             response_text = str(response_obj)
+
+        token_count = extract_token_usage(response_obj)
+        if token_count is not None:
+            metrics.log_tokens(token_count)
 
         return {
             "response": response_text,

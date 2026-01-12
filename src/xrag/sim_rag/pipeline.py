@@ -2,7 +2,8 @@ import torch
 from ..llms import get_llm
 from threading import Lock
 from ..config import Config
-from ..utils import get_module_logger
+from ..utils import get_module_logger, get_metrics_logger
+from ..adaptive_rag.utils import extract_token_usage
 from llama_index.core import Settings
 from llama_index.core.schema import Document
 from typing import Any, Dict, List, Optional, Tuple
@@ -102,10 +103,11 @@ class SimRAGPipeline:
             resp = self._gate_tokenizer.batch_decode(gen, skip_special_tokens=True)[0]
             return {"accepted": resp.strip().endswith("1")}
 
-    def _llm_predict(self, system_prompt: str, content: str) -> str:
+    def _llm_predict(self, system_prompt: str, content: str):
         prompt = f"{system_prompt}\n\n{content}"
         try:
-            return Settings.llm.complete(prompt).text
+            response = Settings.llm.complete(prompt)
+            return response
         except Exception as e:
             logger.exception("LLM prediction failed")
             raise e
@@ -113,7 +115,12 @@ class SimRAGPipeline:
     def _retrieve(
         self, retriever: Any, query: str, top_k: int
     ) -> List[Tuple[str, str, Any]]:
+        metrics = get_metrics_logger()
+        metrics.start_timer()
         nodes = retriever.retrieve(query)
+        retrieval_time = metrics.stop_timer()
+        metrics.log_retrieval(retrieval_time)
+        
         results: List[Tuple[str, str, Any]] = []
         for n in nodes[:top_k]:
             try:
@@ -128,6 +135,7 @@ class SimRAGPipeline:
         return results
 
     def answer(self, question: str, retriever: Any) -> Dict[str, Any]:
+        metrics = get_metrics_logger()
         task_content = f"Question: {question}\nContext:\n"
         retrieved_nodes: List[Any] = []
         retrieved_ids: List[Any] = []
@@ -141,13 +149,27 @@ class SimRAGPipeline:
                 if (turn == 0 and self.use_abstain_first_turn)
                 else self.reason_prompt_str
             )
-            response = self._llm_predict(reason_prompt, task_content)
+            metrics.start_timer()
+            response_obj = self._llm_predict(reason_prompt, task_content)
+            gen_time = metrics.stop_timer()
+            metrics.log_generation(gen_time)
+            
+            # Extract token usage from response
+            token_count = extract_token_usage(response_obj)
+            if token_count is not None:
+                metrics.log_tokens(token_count)
+            
+            response_text = response_obj.text if hasattr(response_obj, 'text') else str(response_obj)
             answer, rationale = extract_final_answer_and_rationale(
-                response, self.question_type
+                response_text, self.question_type
             )
 
             # Decide if stop via gate or max turn
+            metrics.start_timer()
             gate_meta = self._gate_decide(task_content, answer, rationale)
+            critic_time = metrics.stop_timer()
+            metrics.log_critic(critic_time)
+            
             if turn == self.max_turns or gate_meta.get("accepted", False):
                 all_turns.append(
                     {
@@ -163,8 +185,18 @@ class SimRAGPipeline:
 
             # Generate search query
             sq_prompt = self.search_query_prompt_str
-            sq = self._llm_predict(sq_prompt, task_content)
-            parsed_query = parse_query(sq)
+            metrics.start_timer()
+            sq_response = self._llm_predict(sq_prompt, task_content)
+            sq_gen_time = metrics.stop_timer()
+            metrics.log_generation(sq_gen_time)
+            
+            sq_text = sq_response.text if hasattr(sq_response, 'text') else str(sq_response)
+            parsed_query = parse_query(sq_text)
+            
+            # Track token usage for search query generation
+            sq_token_count = extract_token_usage(sq_response)
+            if sq_token_count is not None:
+                metrics.log_tokens(sq_token_count)
 
             # Retrieve
             top_k = self.top_k

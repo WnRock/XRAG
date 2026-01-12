@@ -1,15 +1,17 @@
 from ..llms import get_llm
 from ..config import Config
 from .utils import load_prompt
+from ..utils import get_metrics_logger
 from llama_index.core import QueryBundle
 from llama_index.core.query_engine import RetrieverQueryEngine
 from ..retrievers.retriever import get_retriver, response_synthesizer
 
 
 class SimpleResponse:
-    def __init__(self, text: str):
+    def __init__(self, text: str, raw=None):
         self.response = text
         self.source_nodes = []
+        self.raw = raw
 
 
 class AdaptiveStrategy:
@@ -60,8 +62,12 @@ class DirectGenerationStrategy(AdaptiveStrategy):
         Returns:
             Generated response
         """
+        metrics = get_metrics_logger()
+        metrics.start_timer()
         resp = self.llm.complete(query)
-        return SimpleResponse(resp.text)
+        gen_time = metrics.stop_timer()
+        metrics.log_generation(gen_time)
+        return SimpleResponse(resp.text, raw=resp)
 
 
 class SingleRetrievalStrategy(AdaptiveStrategy):
@@ -99,13 +105,22 @@ class SingleRetrievalStrategy(AdaptiveStrategy):
         Returns:
             Generated response
         """
+        metrics = get_metrics_logger()
+        
         retriever = get_retriver(self.retriever_type, self.index, cfg=self.config)
         synthesizer = response_synthesizer(self.config.responce_synthsizer)
-
-        query_engine = RetrieverQueryEngine(
-            retriever=retriever, response_synthesizer=synthesizer
-        )
-        return query_engine.query(query)
+        
+        metrics.start_timer()
+        nodes = retriever.retrieve(query)
+        retrieval_time = metrics.stop_timer()
+        metrics.log_retrieval(retrieval_time)
+        
+        metrics.start_timer()
+        result = synthesizer.synthesize(query, nodes)
+        gen_time = metrics.stop_timer()
+        metrics.log_generation(gen_time)
+        
+        return result
 
 
 class IterativeRetrievalStrategy(AdaptiveStrategy):
@@ -137,21 +152,32 @@ class IterativeRetrievalStrategy(AdaptiveStrategy):
         )
 
     def _is_information_sufficient(self, query: str, context: str):
+        metrics = get_metrics_logger()
         sufficiency_prompt = load_prompt("information_sufficiency")
 
         prompt = sufficiency_prompt.format(query=query, context=context)
+        
+        metrics.start_timer()
         resp = self.llm.complete(prompt)
+        critic_time = metrics.stop_timer()
+        metrics.log_critic(critic_time)
+        
         text = resp.text.strip()
         decision = "YES" in text.upper()
         additional_info = text.replace("YES", "").replace("NO", "").strip()
         return decision, additional_info
 
     def execute(self, query: str, **kwargs):
+        metrics = get_metrics_logger()
         retriever = get_retriver(self.retriever_type, self.index, cfg=self.config)
         all_context = []
         current_query = query
         for _ in range(self.max_iterations):
+            metrics.start_timer()
             nodes = retriever.retrieve(QueryBundle(query_str=current_query))
+            retrieval_time = metrics.stop_timer()
+            metrics.log_retrieval(retrieval_time)
+            
             ctx_texts = [n.node.get_content() for n in nodes]
             all_context.extend(ctx_texts)
             combined = "\n".join(all_context)
@@ -162,7 +188,10 @@ class IterativeRetrievalStrategy(AdaptiveStrategy):
         synthesizer = response_synthesizer(self.config.responce_synthsizer)
         combined = "\n".join(all_context)
         context_query = f"Query: {query}\n\nRelevant Context:\n{combined}"
-        query_engine = RetrieverQueryEngine(
-            retriever=retriever, response_synthesizer=synthesizer
-        )
-        return query_engine.query(context_query)
+        
+        metrics.start_timer()
+        result = synthesizer.synthesize(context_query, nodes)
+        gen_time = metrics.stop_timer()
+        metrics.log_generation(gen_time)
+        
+        return result

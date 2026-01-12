@@ -7,6 +7,7 @@ from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.storage.docstore import SimpleDocumentStore
 
 from ..data.qa_loader import get_documents
+from ..utils import get_metrics_logger
 import os
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from llama_index.core.node_parser import LangchainNodeParser
@@ -16,9 +17,12 @@ from llama_index.core import Settings
 from llama_index.core.node_parser import SentenceWindowNodeParser
 
 def get_index(documents, persist_dir, split_type="sentence", chunk_size=1024,chunk_overlap=20,chunk_sizes=[2048, 512, 128],semantic_setting=None, window_size=3):
+    metrics = get_metrics_logger()
     hierarchical_storage_context = None
     if not os.path.exists(persist_dir):
         # load the documents and create the index
+        metrics.start_timer()
+        
         if split_type == "sentence":
             parser = SentenceSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
             nodes = parser.get_nodes_from_documents(documents, show_progress=True)
@@ -59,6 +63,9 @@ def get_index(documents, persist_dir, split_type="sentence", chunk_size=1024,chu
         else:
             raise ValueError(f"split_type {split_type} not supported.")
         # store it for later
+        build_time = metrics.stop_timer()
+        metrics.log_index_build(build_time)
+        
         if split_type == "hierarchical":
             docstore = SimpleDocumentStore()
             docstore.add_documents(nodes)
