@@ -766,6 +766,153 @@ def get_qa_dataset(dataset_name:str,files=None):
             title2id=title2id,
             documents=documents,
             dataset=dataset)
+    elif dataset_name == "fqa":
+        logger.info(f"Loading FQA dataset...")
+        # 加载本地 XRAG_FQA 数据集
+        fqa_path = './XRAG_FQA'
+        cache_file = os.path.join(fqa_path, 'fqa_cache.pkl')
+        cache_version = "v1"  # 缓存版本，用于 invalidate
+
+        # 检查缓存是否存在且有效
+        use_cache = False
+        if os.path.exists(cache_file):
+            try:
+                import pickle
+                with open(cache_file, 'rb') as f:
+                    cached_data = pickle.load(f)
+                    # 检查缓存版本
+                    if cached_data.get('cache_version') == cache_version:
+                        use_cache = True
+                        logger.info(f"Loading FQA dataset from cache: {cache_file}")
+                    else:
+                        logger.info(f"Cache version mismatch, reprocessing FQA dataset...")
+            except Exception as e:
+                logger.warning(f"Failed to load cache: {e}, reprocessing...")
+
+        if not use_cache:
+            # 没有缓存或缓存无效，重新处理数据
+            logger.info(f"Processing FQA dataset from source files...")
+
+            # 加载各个 JSON 文件
+            with open(os.path.join(fqa_path, 'train_data.json'), 'r', encoding='utf-8') as f:
+                train_qa = json.load(f)
+            with open(os.path.join(fqa_path, 'valid_data.json'), 'r', encoding='utf-8') as f:
+                valid_qa = json.load(f)
+            with open(os.path.join(fqa_path, 'test_data.json'), 'r', encoding='utf-8') as f:
+                test_qa = json.load(f)
+
+            with open(os.path.join(fqa_path, 'title2sentences.json'), 'r', encoding='utf-8') as f:
+                title2sentences_raw = json.load(f)
+            with open(os.path.join(fqa_path, 'title2id.json'), 'r', encoding='utf-8') as f:
+                title2id = {k: int(v) for k, v in json.load(f).items()}
+            with open(os.path.join(fqa_path, 'titles.json'), 'r', encoding='utf-8') as f:
+                titles = json.load(f)
+            with open(os.path.join(fqa_path, 'sources.json'), 'r', encoding='utf-8') as f:
+                source_sentences = json.load(f)
+
+            # title2sentences 的值是列表格式，需要保持一致
+            # 如果列表中的元素是单个长文本，保持原样
+            title2sentences = title2sentences_raw
+
+            # 构建数据集
+            train_data = {
+                'question': [item['question'] for item in train_qa],
+                'expected_answer': [item['answer'] for item in train_qa],
+                'golden_context': [item['reference'] if isinstance(item['reference'], list) else [item['reference']] for item in train_qa],
+            }
+
+            valid_data = {
+                'question': [item['question'] for item in valid_qa],
+                'expected_answer': [item['answer'] for item in valid_qa],
+                'golden_context': [item['reference'] if isinstance(item['reference'], list) else [item['reference']] for item in valid_qa],
+            }
+
+            test_data = {
+                'question': [item['question'] for item in test_qa],
+                'expected_answer': [item['answer'] for item in test_qa],
+                'golden_context': [item['reference'] if isinstance(item['reference'], list) else [item['reference']] for item in test_qa],
+            }
+
+            # 为每个数据集添加 golden_context_ids
+            # 通过匹配 reference 文本和 title2sentences 中的内容来找到对应的文档 ID
+            def get_context_ids(reference):
+                """根据 reference 文本找到对应的文档 ID"""
+                if isinstance(reference, list):
+                    # 如果是列表，尝试从每个 reference 中找到标题
+                    ids = []
+                    for ref in reference:
+                        # ref 是完整的文档文本，我们需要在 title2sentences 中查找匹配
+                        for title, sentences in title2sentences.items():
+                            # sentences 是列表，取第一个元素（完整文本）进行匹配
+                            if sentences and len(sentences) > 0:
+                                full_text = sentences[0] if isinstance(sentences[0], str) else ' '.join(sentences)
+                                if ref.strip() and ref.strip() in full_text:
+                                    if title2id[title] not in ids:
+                                        ids.append(title2id[title])
+                                    break
+                    return ids if ids else [0]  # 如果找不到，返回默认值
+                else:
+                    # 如果是单个字符串
+                    for title, sentences in title2sentences.items():
+                        if sentences and len(sentences) > 0:
+                            full_text = sentences[0] if isinstance(sentences[0], str) else ' '.join(sentences)
+                            if reference.strip() and reference.strip() in full_text:
+                                return [title2id[title]]
+                    return [0]  # 如果找不到，返回默认值
+
+            train_data['golden_context_ids'] = [get_context_ids(item['reference']) for item in train_qa]
+            valid_data['golden_context_ids'] = [get_context_ids(item['reference']) for item in valid_qa]
+            test_data['golden_context_ids'] = [get_context_ids(item['reference']) for item in test_qa]
+
+            # 创建 documents
+            documents = get_documents(title2sentences, title2id)
+
+            # 保存到缓存
+            logger.info(f"Saving processed FQA dataset to cache: {cache_file}")
+            cache_data = {
+                'cache_version': cache_version,
+                'train_data': train_data,
+                'valid_data': valid_data,
+                'test_data': test_data,
+                'source_sentences': source_sentences,
+                'titles': titles,
+                'title2sentences': title2sentences,
+                'title2id': title2id,
+                'documents': documents
+            }
+            import pickle
+            with open(cache_file, 'wb') as f:
+                pickle.dump(cache_data, f)
+            logger.info("Cache saved successfully")
+        else:
+            # 从缓存加载
+            logger.info(f"Loading FQA dataset from cache: {cache_file}")
+            train_data = cached_data['train_data']
+            valid_data = cached_data['valid_data']
+            test_data = cached_data['test_data']
+            source_sentences = cached_data['source_sentences']
+            titles = cached_data['titles']
+            title2sentences = cached_data['title2sentences']
+            title2id = cached_data['title2id']
+            documents = cached_data['documents']
+
+        logger.info(f"Loaded FQA dataset:")
+        logger.info(f"  Train questions: {len(train_data['question'])}")
+        logger.info(f"  Valid questions: {len(valid_data['question'])}")
+        logger.info(f"  Test questions: {len(test_data['question'])}")
+        logger.info(f"  Documents: {len(documents)}")
+
+        return dict(
+            train_data=train_data,
+            valid_data=valid_data,
+            test_data=test_data,
+            sources=source_sentences,
+            titles=titles,
+            title2sentences=title2sentences,
+            title2id=title2id,
+            documents=documents,
+            dataset={'fqa_path': fqa_path})
+
     elif dataset_name == "law":
         law = json.load(open('./data/law.json','r',encoding='utf-8'))
         law_qa_test = json.load(open('data/law_qa_test.json', 'r', encoding='utf-8'))
