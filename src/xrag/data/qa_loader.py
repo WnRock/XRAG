@@ -1074,7 +1074,13 @@ def generate_qa_from_folder(folder_path: str, output_file: str, num_questions_pe
             )
             
             # 获取 LLM 响应
-            response = llm.complete(prompt)
+            for retry in range(3):
+                try:
+                    response = llm.complete(prompt)
+                    break
+                except Exception:
+                    if retry == 2:
+                        raise
             
             # 解析响应中的 JSON
             try:

@@ -64,7 +64,13 @@ class DirectGenerationStrategy(AdaptiveStrategy):
         """
         metrics = get_metrics_logger()
         metrics.start_timer()
-        resp = self.llm.complete(query)
+        for retry in range(3):
+            try:
+                resp = self.llm.complete(query)
+                break
+            except Exception:
+                if retry == 2:
+                    raise
         gen_time = metrics.stop_timer()
         metrics.log_generation(gen_time)
         return SimpleResponse(resp.text, raw=resp)
@@ -158,7 +164,13 @@ class IterativeRetrievalStrategy(AdaptiveStrategy):
         prompt = sufficiency_prompt.format(query=query, context=context)
         
         metrics.start_timer()
-        resp = self.llm.complete(prompt)
+        for retry in range(3):
+            try:
+                resp = self.llm.complete(prompt)
+                break
+            except Exception:
+                if retry == 2:
+                    raise
         critic_time = metrics.stop_timer()
         metrics.log_critic(critic_time)
         

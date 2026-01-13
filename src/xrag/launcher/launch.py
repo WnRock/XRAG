@@ -98,21 +98,25 @@ def eval_cli(qa_dataset, query_engine):
             qa_dataset['test_data']['golden_context'][:cfg.test_init_total_number_documents],
             qa_dataset['test_data']['golden_context_ids'][:cfg.test_init_total_number_documents]
     ):
-        response = transform_and_query(question, cfg, query_engine)
-        # 返回node节点
-        retrieval_ids = []
-        retrieval_context = []
-        for source_node in response.source_nodes:
-            retrieval_ids.append(source_node.metadata['id'])
-            retrieval_context.append(source_node.get_content())
-        actual_response = response.response
-        eval_result = evaluating(question, response, actual_response, retrieval_context, retrieval_ids,
-                                 expected_answer, golden_context, golden_context_ids, evaluateResults.metrics,
-                                 evalAgent)
-        evaluateResults.add(eval_result)
-        all_num = all_num + 1
-        evaluateResults.print_results()
-        print("总数：" + str(all_num))
+        try:
+            response = transform_and_query(question, cfg, query_engine)
+            # 返回node节点
+            retrieval_ids = []
+            retrieval_context = []
+            for source_node in response.source_nodes:
+                retrieval_ids.append(source_node.metadata['id'])
+                retrieval_context.append(source_node.get_content())
+            actual_response = response.response
+            eval_result = evaluating(question, response, actual_response, retrieval_context, retrieval_ids,
+                                     expected_answer, golden_context, golden_context_ids, evaluateResults.metrics,
+                                     evalAgent)
+            evaluateResults.add(eval_result)
+            all_num = all_num + 1
+            evaluateResults.print_results()
+            print("总数：" + str(all_num))
+        except Exception:
+            print(f"Error processing question: {question}")
+            continue
     return evaluateResults
 
 def eval_self_rag(qa_dataset):
@@ -185,23 +189,27 @@ def eval_adaptive_rag(qa_dataset, index):
             qa_dataset['test_data']['golden_context'][:total],
             qa_dataset['test_data']['golden_context_ids'][:total]
     ):
-        out = engine.query(question)
-        underlying = out.get("response_obj")
-        adapter = _AdaptiveAdapter(underlying)
-        retrieval_ids = []
-        retrieval_context = []
-        for node_with_score in adapter.source_nodes:
-            try:
-                retrieval_ids.append(node_with_score.node.metadata.get('id'))
-                retrieval_context.append(node_with_score.node.get_content())
-            except Exception:
-                pass
-        actual_response = adapter.response
-        eval_result = evaluating(question, adapter, actual_response, retrieval_context, retrieval_ids,
-                                 expected_answer, golden_context, golden_context_ids, evaluateResults.metrics,
-                                 evalAgent)
-        evaluateResults.add(eval_result)
-        evaluateResults.print_results()
+        try:
+            out = engine.query(question)
+            underlying = out.get("response_obj")
+            adapter = _AdaptiveAdapter(underlying)
+            retrieval_ids = []
+            retrieval_context = []
+            for node_with_score in adapter.source_nodes:
+                try:
+                    retrieval_ids.append(node_with_score.node.metadata.get('id'))
+                    retrieval_context.append(node_with_score.node.get_content())
+                except Exception:
+                    pass
+            actual_response = adapter.response
+            eval_result = evaluating(question, adapter, actual_response, retrieval_context, retrieval_ids,
+                                     expected_answer, golden_context, golden_context_ids, evaluateResults.metrics,
+                                     evalAgent)
+            evaluateResults.add(eval_result)
+            evaluateResults.print_results()
+        except Exception:
+            print(f"Error processing question: {question}")
+            continue
     
     metrics.log_summary()
     return evaluateResults
@@ -248,22 +256,26 @@ def run(cli=True, custom_dataset=None):
                 qa_dataset['test_data']['golden_context'][:limit],
                 qa_dataset['test_data']['golden_context_ids'][:limit]
         ):
-            sim_out = run_simrag(question, retriever=retriever, cfg=cfg)
-            actual_response = sim_out["response"]
-            retrieval_context = sim_out["retrieved_texts"]
-            retrieval_ids = sim_out["retrieved_ids"]
-            # Build a lightweight response-like object to satisfy evaluators that expect .response and .source_nodes
-            class _Resp:
-                def __init__(self, text, texts):
-                    self.response = text
-                    from llama_index.core.schema import TextNode, NodeWithScore
-                    self.source_nodes = [NodeWithScore(node=TextNode(text=t)) for t in texts]
-            response = _Resp(actual_response, retrieval_context)
-            eval_result = evaluating(question, response, actual_response, retrieval_context, retrieval_ids,
-                                     expected_answer, golden_context, golden_context_ids, evaluateResults.metrics,
-                                     evalAgent)
-            evaluateResults.add(eval_result)
-            evaluateResults.print_results()
+            try:
+                sim_out = run_simrag(question, retriever=retriever, cfg=cfg)
+                actual_response = sim_out["response"]
+                retrieval_context = sim_out["retrieved_texts"]
+                retrieval_ids = sim_out["retrieved_ids"]
+                # Build a lightweight response-like object to satisfy evaluators that expect .response and .source_nodes
+                class _Resp:
+                    def __init__(self, text, texts):
+                        self.response = text
+                        from llama_index.core.schema import TextNode, NodeWithScore
+                        self.source_nodes = [NodeWithScore(node=TextNode(text=t)) for t in texts]
+                response = _Resp(actual_response, retrieval_context)
+                eval_result = evaluating(question, response, actual_response, retrieval_context, retrieval_ids,
+                                         expected_answer, golden_context, golden_context_ids, evaluateResults.metrics,
+                                         evalAgent)
+                evaluateResults.add(eval_result)
+                evaluateResults.print_results()
+            except Exception:
+                print(f"Error processing question: {question}")
+                continue
         metrics.log_summary()
         return evaluateResults
     else:

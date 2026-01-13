@@ -50,7 +50,13 @@ class QueryComplexityClassifier:
         valid_classes = ["SIMPLE", "MODERATE", "COMPLEX"]
         for attempt in range(max_retries):
             try:
-                response = self.llm.complete(prompt)
+                for retry in range(3):
+                    try:
+                        response = self.llm.complete(prompt)
+                        break
+                    except Exception:
+                        if retry == 2:
+                            raise
                 classification_raw = response.text.strip()
                 classification = classification_raw.upper()
 

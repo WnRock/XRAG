@@ -106,7 +106,13 @@ class SimRAGPipeline:
     def _llm_predict(self, system_prompt: str, content: str):
         prompt = f"{system_prompt}\n\n{content}"
         try:
-            response = Settings.llm.complete(prompt)
+            for retry in range(3):
+                try:
+                    response = Settings.llm.complete(prompt)
+                    break
+                except Exception:
+                    if retry == 2:
+                        raise
             return response
         except Exception as e:
             logger.exception("LLM prediction failed")
