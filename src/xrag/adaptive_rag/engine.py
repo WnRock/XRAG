@@ -88,9 +88,6 @@ class AdaptiveRAG:
         else:
             response_text = str(response_obj)
 
-        token_count = extract_token_usage(response_obj)
-        if token_count is not None:
-            metrics.log_tokens(token_count)
 
         return {
             "response": response_text,

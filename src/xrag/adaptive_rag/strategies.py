@@ -1,6 +1,6 @@
 from ..llms import get_llm
 from ..config import Config
-from .utils import load_prompt
+from .utils import load_prompt, extract_token_usage
 from ..utils import get_metrics_logger
 from llama_index.core import QueryBundle
 from llama_index.core.query_engine import RetrieverQueryEngine
@@ -73,6 +73,11 @@ class DirectGenerationStrategy(AdaptiveStrategy):
                     raise
         gen_time = metrics.stop_timer()
         metrics.log_generation(gen_time)
+
+        token_count = extract_token_usage(resp)
+        if token_count is not None:
+            metrics.log_tokens(token_count)
+        
         return SimpleResponse(resp.text, raw=resp)
 
 
@@ -126,6 +131,10 @@ class SingleRetrievalStrategy(AdaptiveStrategy):
         gen_time = metrics.stop_timer()
         metrics.log_generation(gen_time)
         
+        token_count = extract_token_usage(result)
+        if token_count is not None:
+            metrics.log_tokens(token_count)
+        
         return result
 
 
@@ -173,6 +182,10 @@ class IterativeRetrievalStrategy(AdaptiveStrategy):
                     raise
         critic_time = metrics.stop_timer()
         metrics.log_critic(critic_time)
+
+        token_count = extract_token_usage(resp)
+        if token_count is not None:
+            metrics.log_tokens(token_count)
         
         text = resp.text.strip()
         decision = "YES" in text.upper()
@@ -205,5 +218,9 @@ class IterativeRetrievalStrategy(AdaptiveStrategy):
         result = synthesizer.synthesize(context_query, nodes)
         gen_time = metrics.stop_timer()
         metrics.log_generation(gen_time)
+        
+        token_count = extract_token_usage(result)
+        if token_count is not None:
+            metrics.log_tokens(token_count)
         
         return result

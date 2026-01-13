@@ -82,6 +82,22 @@ def extract_token_usage(response_obj: Any) -> Optional[int]:
                     elif "prompt_tokens" in usage and "completion_tokens" in usage:
                         return usage["prompt_tokens"] + usage["completion_tokens"]
 
+    if hasattr(response_obj, "source_nodes") and response_obj.source_nodes:
+        for node in response_obj.source_nodes:
+            if hasattr(node, "metadata") and isinstance(node.metadata, dict):
+                if "token_usage" in node.metadata:
+                    usage = node.metadata["token_usage"]
+                    if isinstance(usage, dict):
+                        if "total_tokens" in usage:
+                            return usage["total_tokens"]
+                        elif "prompt_tokens" in usage and "completion_tokens" in usage:
+                            return usage["prompt_tokens"] + usage["completion_tokens"]
+
+    if hasattr(response_obj, "response") and response_obj.response is not None:
+        underlying_tokens = extract_token_usage(response_obj.response)
+        if underlying_tokens is not None:
+            return underlying_tokens
+
     return total_tokens
 
 

@@ -1,8 +1,8 @@
 from typing import Literal
 from ..llms import get_llm
 from ..config import Config
-from .utils import load_prompt
-from ..utils import get_module_logger
+from .utils import load_prompt, extract_token_usage
+from ..utils import get_module_logger, get_metrics_logger
 
 logger = get_module_logger(__name__)
 
@@ -48,6 +48,7 @@ class QueryComplexityClassifier:
         prompt = classification_prompt.format(query=query)
 
         valid_classes = ["SIMPLE", "MODERATE", "COMPLEX"]
+        metrics = get_metrics_logger()
         for attempt in range(max_retries):
             try:
                 for retry in range(3):
@@ -57,6 +58,11 @@ class QueryComplexityClassifier:
                     except Exception:
                         if retry == 2:
                             raise
+
+                token_count = extract_token_usage(response)
+                if token_count is not None:
+                    metrics.log_tokens(token_count)
+                
                 classification_raw = response.text.strip()
                 classification = classification_raw.upper()
 
