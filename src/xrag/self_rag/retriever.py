@@ -7,7 +7,7 @@ import pickle
 import numpy as np
 import transformers
 from ..config import Config
-from ..utils import get_module_logger
+from ..utils import get_module_logger, get_metrics_logger
 from typing import List, Dict, Optional, Any
 
 logger = get_module_logger(__name__)
@@ -208,6 +208,8 @@ class SelfRAGRetriever:
         Returns:
             List of retrieved documents with metadata
         """
+        metrics = get_metrics_logger()
+        
         if n_docs is None:
             n_docs = self.n_docs
 
@@ -217,14 +219,15 @@ class SelfRAGRetriever:
 
         try:
             # Embed the query
+            metrics.start_timer()
             query_embedding = self.embed_queries([query])
 
             # Search in the index
-            start_time = time.time()
             indices, scores = self.index.search_knn(
                 query_embedding.astype("float32"), n_docs
             )
-            search_time = time.time() - start_time
+            search_time = metrics.stop_timer()
+            metrics.log_retrieval(search_time)
 
             logger.debug(f"Search completed in {search_time:.2f}s")
 

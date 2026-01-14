@@ -1,6 +1,6 @@
 from ..config import Config
 from .utils import SelfRAGTokens
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -106,7 +106,7 @@ class SelfRAGModel:
 
     def generate(
         self, queries: List[str], paragraphs: Optional[List[str]] = None
-    ) -> List[str]:
+    ) -> List[Dict[str, Any]]:
         """
         Generate responses for a list of queries.
 
@@ -115,7 +115,7 @@ class SelfRAGModel:
             paragraphs (List[str], optional): Optional list of retrieved paragraphs (one per query)
 
         Returns:
-            List of generated responses
+            List of dictionaries with 'text', 'input_tokens', 'output_tokens', and 'total_tokens'
         """
         if not self.model:
             raise RuntimeError("Model not initialized. Call _initialize_model() first.")
@@ -158,7 +158,13 @@ class SelfRAGModel:
                     generated_ids,
                     skip_special_tokens=self.sampling_params.skip_special_tokens,
                 )
-                responses.append(text)
+                output_tokens = len(generated_ids)
+                responses.append({
+                    "text": text,
+                    "input_tokens": prompt_len,
+                    "output_tokens": output_tokens,
+                    "total_tokens": prompt_len + output_tokens,
+                })
             logger.info("Response generation completed")
             return responses
         except Exception as e:
@@ -176,18 +182,8 @@ class SelfRAGModel:
         Returns:
             Dictionary with 'text', 'input_tokens', 'output_tokens', and 'total_tokens'
         """
-        text = self.generate([query], [paragraph] if paragraph else None)[0]
-        
-        prompt = self.format_prompt(query, paragraph)
-        input_tokens = len(self.tokenizer.encode(prompt))
-        output_tokens = len(self.tokenizer.encode(text))
-        
-        return {
-            "text": text,
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "total_tokens": input_tokens + output_tokens,
-        }
+        result = self.generate([query], [paragraph] if paragraph else None)[0]
+        return result
 
     def generate_with_logprobs(
         self, query: str, paragraph: Optional[str] = None, max_new_tokens: int = 15
