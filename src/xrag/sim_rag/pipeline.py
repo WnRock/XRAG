@@ -65,7 +65,6 @@ class SimRAGPipeline:
     def _gate_decide(
         self, task_content: str, answer: str, rationale: str
     ) -> Dict[str, Any]:
-        metrics = get_metrics_logger()
         instruction = "Instruction: Predict if the following answer to the question and context should be accepted, 1, or rejected, 0, based on the rationale."
         text = (
             f"{instruction}\n{task_content} \nAnswer: {answer}\nRationale: {rationale}"
@@ -90,7 +89,7 @@ class SimRAGPipeline:
                 gen.sequences, skip_special_tokens=True
             )[0]
             output_tokens = gen.sequences.shape[1] - input_tokens
-            metrics.log_tokens(input_tokens + output_tokens)
+            total_tokens = input_tokens + output_tokens
             
             last_logits = gen.scores[0]
             probs = torch.nn.functional.softmax(last_logits, dim=-1)
@@ -102,6 +101,7 @@ class SimRAGPipeline:
                 "accepted": resp.strip().endswith("1"),
                 "confidence_0": p0,
                 "confidence_1": p1,
+                "tokens": total_tokens,
             }
         else:
             gen = self._gate_model.generate(
@@ -109,9 +109,9 @@ class SimRAGPipeline:
             )
             resp = self._gate_tokenizer.batch_decode(gen, skip_special_tokens=True)[0]
             output_tokens = gen.shape[1] - input_tokens
-            metrics.log_tokens(input_tokens + output_tokens)
+            total_tokens = input_tokens + output_tokens
             
-            return {"accepted": resp.strip().endswith("1")}
+            return {"accepted": resp.strip().endswith("1"), "tokens": total_tokens}
 
     def _llm_predict(self, system_prompt: str, content: str):
         prompt = f"{system_prompt}\n\n{content}"
@@ -131,11 +131,7 @@ class SimRAGPipeline:
     def _retrieve(
         self, retriever: Any, query: str, top_k: int
     ) -> List[Tuple[str, str, Any]]:
-        metrics = get_metrics_logger()
-        metrics.start_timer()
         nodes = retriever.retrieve(query)
-        retrieval_time = metrics.stop_timer()
-        metrics.log_retrieval(retrieval_time)
         
         results: List[Tuple[str, str, Any]] = []
         for n in nodes[:top_k]:
@@ -167,8 +163,6 @@ class SimRAGPipeline:
             )
             metrics.start_timer()
             response_obj = self._llm_predict(reason_prompt, task_content)
-            gen_time = metrics.stop_timer()
-            metrics.log_generation(gen_time)
             
             # Extract token usage from response
             token_count = extract_token_usage(response_obj)
@@ -179,12 +173,18 @@ class SimRAGPipeline:
             answer, rationale = extract_final_answer_and_rationale(
                 response_text, self.question_type
             )
+            gen_time = metrics.stop_timer()
+            metrics.log_generation(gen_time)
 
             # Decide if stop via gate or max turn
             metrics.start_timer()
             gate_meta = self._gate_decide(task_content, answer, rationale)
             critic_time = metrics.stop_timer()
             metrics.log_critic(critic_time)
+            
+            gate_tokens = gate_meta.get("tokens")
+            if gate_tokens is not None:
+                metrics.log_tokens(gate_tokens)
             
             if turn == self.max_turns or gate_meta.get("accepted", False):
                 all_turns.append(
@@ -203,8 +203,6 @@ class SimRAGPipeline:
             sq_prompt = self.search_query_prompt_str
             metrics.start_timer()
             sq_response = self._llm_predict(sq_prompt, task_content)
-            sq_gen_time = metrics.stop_timer()
-            metrics.log_generation(sq_gen_time)
             
             sq_text = sq_response.text if hasattr(sq_response, 'text') else str(sq_response)
             parsed_query = parse_query(sq_text)
@@ -253,6 +251,8 @@ class SimRAGPipeline:
                     task_content
                     + f"Query: {parsed_query}\nRetrieved Document: {retrieved_docs_content}\n"
                 )
+
+            metrics.log_retrieval(metrics.stop_timer())
 
             all_turns.append(
                 {
