@@ -65,6 +65,7 @@ class SimRAGPipeline:
     def _gate_decide(
         self, task_content: str, answer: str, rationale: str
     ) -> Dict[str, Any]:
+        metrics = get_metrics_logger()
         instruction = "Instruction: Predict if the following answer to the question and context should be accepted, 1, or rejected, 0, based on the rationale."
         text = (
             f"{instruction}\n{task_content} \nAnswer: {answer}\nRationale: {rationale}"
@@ -74,6 +75,9 @@ class SimRAGPipeline:
         )
         device = next(self._gate_model.parameters()).device
         tok = {k: v.to(device) for k, v in tok.items()}
+        
+        input_tokens = tok["input_ids"].shape[1]
+        
         if self.gate_weighted:
             gen = self._gate_model.generate(
                 input_ids=tok["input_ids"],
@@ -85,6 +89,9 @@ class SimRAGPipeline:
             resp = self._gate_tokenizer.batch_decode(
                 gen.sequences, skip_special_tokens=True
             )[0]
+            output_tokens = gen.sequences.shape[1] - input_tokens
+            metrics.log_tokens(input_tokens + output_tokens)
+            
             last_logits = gen.scores[0]
             probs = torch.nn.functional.softmax(last_logits, dim=-1)
             t0 = self._gate_tokenizer.encode("0", add_special_tokens=False)[0]
@@ -101,6 +108,9 @@ class SimRAGPipeline:
                 input_ids=tok["input_ids"], attention_mask=tok.get("attention_mask")
             )
             resp = self._gate_tokenizer.batch_decode(gen, skip_special_tokens=True)[0]
+            output_tokens = gen.shape[1] - input_tokens
+            metrics.log_tokens(input_tokens + output_tokens)
+            
             return {"accepted": resp.strip().endswith("1")}
 
     def _llm_predict(self, system_prompt: str, content: str):
