@@ -137,6 +137,105 @@ class SelfRAGRetriever:
             logger.error(f"Failed to setup index: {e}")
             raise
 
+    def setup_index_from_llama_index(self, llama_index, build_faiss: bool = True):
+        """
+        Setup the retrieval index from an existing LlamaIndex VectorStoreIndex.
+        This extracts passages from nodes and optionally builds a FAISS index from embeddings.
+
+        Params:
+            llama_index: LlamaIndex VectorStoreIndex object
+            build_faiss (bool): Whether to build FAISS index from embeddings (default: True)
+        """
+        try:
+            logger.info("Setting up Self-RAG retriever from LlamaIndex...")
+
+            docstore = llama_index.docstore
+            all_nodes = list(docstore.docs.values())
+            logger.info(f"Extracted {len(all_nodes)} nodes from LlamaIndex")
+
+            self.passages = []
+            for idx, node in enumerate(all_nodes):
+                metadata = getattr(node, "metadata", {}) or {}
+                node_id = metadata.get("id", getattr(node, "node_id", str(idx)))
+                title = metadata.get(
+                    "title", metadata.get("file_name", f"doc_{node_id}")
+                )
+                text = (
+                    getattr(node, "text", "")
+                    or getattr(node, "get_content", lambda: "")()
+                )
+
+                self.passages.append({"id": str(node_id), "title": title, "text": text})
+
+            self.passage_id_map = {p["id"]: p for p in self.passages}
+            logger.info(f"Converted {len(self.passages)} passages from nodes")
+
+            if build_faiss:
+                try:
+                    vector_store = llama_index.vector_store
+                    embeddings_list = []
+
+                    if hasattr(vector_store, "_data") and hasattr(
+                        vector_store._data, "embedding_dict"
+                    ):
+                        embedding_dict = vector_store._data.embedding_dict
+                        for node in all_nodes:
+                            node_id = getattr(node, "node_id", None)
+                            if node_id and node_id in embedding_dict:
+                                embeddings_list.append(embedding_dict[node_id])
+
+                    if embeddings_list:
+                        embeddings_array = np.array(embeddings_list, dtype="float32")
+                        dimension = embeddings_array.shape[1]
+
+                        self.index = faiss.IndexFlatIP(dimension)
+                        self.index.add(embeddings_array)
+                        logger.info(
+                            f"Built FAISS index with {self.index.ntotal} vectors (dim={dimension})"
+                        )
+                    else:
+                        logger.warning(
+                            "Could not extract embeddings from vector store. Will embed passages on-demand."
+                        )
+                        self._build_faiss_from_passages()
+
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to extract embeddings from vector store: {e}. Building from scratch."
+                    )
+                    self._build_faiss_from_passages()
+            else:
+                logger.info("FAISS index building skipped (build_faiss=False)")
+                self.index = None
+
+        except Exception as e:
+            logger.error(f"Failed to setup index from LlamaIndex: {e}")
+            raise
+
+    def _build_faiss_from_passages(self):
+        """Build FAISS index by embedding all passages."""
+        if not self.passages:
+            logger.warning("No passages to embed")
+            return
+
+        logger.info(f"Embedding {len(self.passages)} passages to build FAISS index...")
+        texts = [p["text"] for p in self.passages]
+
+        all_embeddings = []
+        for i in range(0, len(texts), self.batch_size):
+            batch_texts = texts[i : i + self.batch_size]
+            batch_embeddings = self.embed_queries(batch_texts)
+            all_embeddings.append(batch_embeddings)
+
+        embeddings_array = np.vstack(all_embeddings).astype("float32")
+        dimension = embeddings_array.shape[1]
+
+        self.index = faiss.IndexFlatIP(dimension)
+        self.index.add(embeddings_array)
+        logger.info(
+            f"Built FAISS index with {self.index.ntotal} vectors (dim={dimension})"
+        )
+
     def _load_passages(self, passages_path: str) -> List[Dict[str, Any]]:
         """Load passages from file."""
         passages = []

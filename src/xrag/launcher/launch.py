@@ -21,7 +21,9 @@ from ..sim_rag import run_simrag
 from ..self_rag import SelfRAGPipeline
 from llama_index.core.schema import NodeWithScore, TextNode
 from ..adaptive_rag.engine import AdaptiveRAG
-from ..utils import reset_metrics_logger
+from ..utils import reset_metrics_logger, get_module_logger
+
+logger = get_module_logger(__name__)
 
 
 def seed_everything(seed):
@@ -123,14 +125,10 @@ def eval_self_rag(qa_dataset):
     cfg = Config()
     metrics = reset_metrics_logger()
     
-    try:
-        index, hierarchical_storage_context = build_index(qa_dataset['documents'])
-        external_retriever = get_retriver(cfg.retriever, index, hierarchical_storage_context=hierarchical_storage_context, cfg=cfg)
-    except Exception as e:
-        warnings.warn(f"Failed to build standard retriever for Self-RAG; fallback to internal retriever. Error: {e}")
-        external_retriever = None
-
-    pipeline = SelfRAGPipeline(cfg, external_retriever=external_retriever)
+    index, hierarchical_storage_context = build_index(qa_dataset['documents'])
+    
+    pipeline = SelfRAGPipeline(cfg)
+    pipeline.setup_retriever(llama_index=index, build_faiss=True)
     evaluateResults = EvaluationResult(metrics=cfg.metrics)
     evalAgent = EvalModelAgent(cfg)
 

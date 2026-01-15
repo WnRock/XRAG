@@ -40,20 +40,29 @@ class SelfRAGPipeline:
 
         logger.info("Initialized SelfRAGPipeline (external retriever: %s)" % (self.external_retriever is not None))
 
-    def setup_retriever(self, passages_path: str, embeddings_path: str = None):
+    def setup_retriever(self, passages_path: str = None, embeddings_path: str = None, llama_index=None, build_faiss: bool = True):
         """
         Setup the retrieval component.
 
         Params:
-            passages_path (str): Path to passages file
-            embeddings_path (str, optional): Path to precomputed embeddings (optional)
+            passages_path (str, optional): Path to passages file
+            embeddings_path (str, optional): Path to precomputed embeddings
+            llama_index (optional): LlamaIndex VectorStoreIndex to use instead of file paths
+            build_faiss (bool): Whether to build FAISS index (only for llama_index mode)
         """
         logger.info("Setting up retriever...")
         try:
-            self.retriever.setup_index(passages_path, embeddings_path)
+            if llama_index is not None:
+                logger.info("Using existing LlamaIndex to setup retriever")
+                self.retriever.setup_index_from_llama_index(llama_index, build_faiss=build_faiss)
+            elif passages_path:
+                logger.info(f"Loading passages from {passages_path}")
+                self.retriever.setup_index(passages_path, embeddings_path)
+            else:
+                raise ValueError("Either llama_index or passages_path must be provided")
             logger.info("Retriever setup completed successfully")
-        except:
-            logger.warning("Retriever setup incomplete. Some features may not work.")
+        except Exception as e:
+            logger.warning(f"Retriever setup incomplete: {e}. Some features may not work.")
 
     def query(
         self,
