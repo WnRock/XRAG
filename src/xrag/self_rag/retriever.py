@@ -320,7 +320,7 @@ class SelfRAGRetriever:
             query_embedding = self.embed_queries([query])
 
             # Search in the index
-            indices, scores = self.index.search_knn(
+            scores, indices = self.index.search(
                 query_embedding.astype("float32"), n_docs
             )
 
