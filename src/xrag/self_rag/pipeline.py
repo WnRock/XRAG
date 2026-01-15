@@ -25,7 +25,6 @@ class SelfRAGPipeline:
         self.self_rag_config = self.config.config.get("self_rag", {})
 
         self.model = SelfRAGModel(self.config)
-        self.retriever = SelfRAGRetriever(self.config)
         self.external_retriever = external_retriever
         self.parser = SelfRAGResponseParser()
 
@@ -101,14 +100,10 @@ class SelfRAGPipeline:
         evidences = []
 
         metrics.start_timer()
-        if self.external_retriever is not None:
-            try:
-                retrieved_docs = self._external_search(query, n_docs)
-            except Exception as e:
-                logger.warning(f"External retriever failed ({e}); falling back to internal SelfRAG retriever")
-                retrieved_docs = self.retriever.search_documents(query, n_docs)
-        else:
-            retrieved_docs = self.retriever.search_documents(query, n_docs)
+        try:
+            retrieved_docs = self._external_search(query, n_docs)
+        except Exception as e:
+            logger.warning(f"Retriever failed ({e})", exc_info=True, stack_info=True)
         retrieval_time = metrics.stop_timer()
         metrics.log_retrieval(retrieval_time)
         

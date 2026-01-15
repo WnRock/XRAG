@@ -126,9 +126,9 @@ def eval_self_rag(qa_dataset):
     metrics = reset_metrics_logger()
     
     index, hierarchical_storage_context = build_index(qa_dataset['documents'])
+    retriever = get_retriver(cfg.retriever, index, hierarchical_storage_context=hierarchical_storage_context, cfg=cfg)
     
-    pipeline = SelfRAGPipeline(cfg)
-    pipeline.setup_retriever(llama_index=index, build_faiss=True)
+    pipeline = SelfRAGPipeline(cfg, external_retriever=retriever)
     evaluateResults = EvaluationResult(metrics=cfg.metrics)
     evalAgent = EvalModelAgent(cfg)
 
