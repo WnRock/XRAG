@@ -103,7 +103,8 @@ class SelfRAGRetriever:
 
                     # Get embeddings
                     output = self.model(**encoded_batch)
-                    embeddings.append(output.cpu())
+                    embedding_tensor = output.pooler_output
+                    embeddings.append(embedding_tensor.cpu())
 
                     batch_queries = []
 
