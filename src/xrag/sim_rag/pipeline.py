@@ -154,11 +154,11 @@ class SimRAGPipeline:
         all_turns: List[Dict[str, Any]] = []
         seen_titles: List[str] = []
 
-        for turn in range(self.max_turns + 1):
+        for turn in range(1, self.max_turns + 1):
             # Reason step
             reason_prompt = (
                 abstain_force_answer_prompt
-                if (turn == 0 and self.use_abstain_first_turn)
+                if (turn == 1 and self.use_abstain_first_turn)
                 else self.reason_prompt_str
             )
             metrics.start_timer()
