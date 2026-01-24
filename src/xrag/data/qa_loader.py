@@ -243,6 +243,414 @@ def get_qa_dataset(dataset_name:str,files=None):
             documents=documents,
             dataset=dataset)
     
+    elif dataset_name == "hotpot_qa_hard":
+        dataset = load_dataset(
+            "hotpot_qa",
+            "fullwiki",
+            storage_options={
+                "client_kwargs": {
+                    "timeout": aiohttp.ClientTimeout(total=cfg.dataset_download_timeout)
+                }
+            },
+        )
+
+        questions = dataset['train']['question'] + dataset['validation']['question']
+        answers = dataset['train']['answer'] + dataset['validation']['answer']
+        golden_sources = dataset['train']['context'] + dataset['validation']['context']
+        supporting_facts = dataset['train']['supporting_facts'] + dataset['validation']['supporting_facts']
+        levels = dataset['train']['level'] + dataset['validation']['level']
+        source_sentences = []
+        title2sentences = {}
+        titles = []
+        title2start = {}
+        title2id = {}
+        id = 0
+        cur = 0
+        
+        # 第一步：收集所有文档信息
+        for sup, source in zip(supporting_facts, golden_sources):
+            title = source['title']
+            sentence = source['sentences']
+
+            if experiment_1:
+                if id < test_all_number_documents:
+                    GlobalVar.set_query_number(GlobalVar.get_query_number() + 1)
+
+            for t, s in zip(title, sentence):
+                if t not in title2sentences:
+                    title2sentences[t] = s
+                    title2start[t] = cur
+                    titles.append(t)
+                    source_sentences.extend(s)
+                    cur += len(s)
+                    title2id[t] = id
+                    id += 1
+
+        # 获取测试数据中涉及的所有文档标题
+        indexes = list(range(len(questions)))
+        random.shuffle(indexes)
+        train_indexes = indexes[:int(len(indexes)*0.9)]
+        valid_indexes = indexes[int(len(indexes)*0.9):int(len(indexes)*0.99)]
+        test_indexes = indexes[int(len(indexes)*0.99):]
+        
+        # 筛选hard级别的测试数据
+        dif_test_indexes = [
+            i for i in test_indexes 
+            if i < len(levels) and levels[i] == 'hard'
+        ]
+        
+        # 收集测试数据涉及的文档标题
+        test_doc_titles = set()
+        for i in dif_test_indexes:
+            sup_fact = supporting_facts[i]
+            source = golden_sources[i]
+            title_list = source['title']
+            for t in title_list:
+                if t in sup_fact['title']:  # 只取支持事实相关的文档
+                    test_doc_titles.add(t)
+        
+        # 构建文档列表：先包含测试相关的文档，再补充其他文档
+        test_documents = []
+        other_documents = []
+        
+        # 按照 get_documents 的方式创建所有文档
+        all_titles = list(title2sentences.keys())
+        
+        # 先处理测试相关的文档
+        for title in all_titles:
+            sentence_list = title2sentences[title]
+            doc = Document(
+                text=' '.join(sentence_list), 
+                metadata={'title': title, 'id': title2id[title]},
+                doc_id=str(title2id[title])
+            )
+            
+            if title in test_doc_titles:
+                test_documents.append(doc)
+            else:
+                other_documents.append(doc)
+        
+        # 合并文档：测试文档在前，其他文档在后
+        documents = test_documents + other_documents
+        
+        # 只取前30000个文档
+        if len(documents) > 30000:
+            documents = documents[:30000]
+        
+        # 构建数据集分割
+        train_data = {}
+        valid_data = {}
+        test_data = {}
+        
+        train_data['question'], train_data['expected_answer'], train_data['golden_context_ids'], train_data['golden_context'] = build_split(
+            [answers[i] for i in train_indexes], 
+            [questions[i] for i in train_indexes], 
+            [supporting_facts[i] for i in train_indexes], 
+            title2id, 
+            title2sentences
+        )
+        
+        valid_data['question'], valid_data['expected_answer'], valid_data['golden_context_ids'], valid_data['golden_context'] = build_split(
+            [answers[i] for i in valid_indexes], 
+            [questions[i] for i in valid_indexes], 
+            [supporting_facts[i] for i in valid_indexes], 
+            title2id, 
+            title2sentences
+        )
+        
+        test_data['question'], test_data['expected_answer'], test_data['golden_context_ids'], test_data['golden_context'] = build_split(
+            [answers[i] for i in dif_test_indexes], 
+            [questions[i] for i in dif_test_indexes], 
+            [supporting_facts[i] for i in dif_test_indexes], 
+            title2id, 
+            title2sentences
+        )
+
+        return dict(
+            train_data=train_data,
+            valid_data=valid_data,
+            test_data=test_data,
+            sources=source_sentences,
+            titles=titles,
+            title2sentences=title2sentences,
+            title2start=title2start,
+            title2id=title2id,
+            documents=documents,  # 已经是测试文档优先的10000条
+            dataset=dataset
+        )
+
+    elif dataset_name == "hotpot_qa_medium":
+        dataset = load_dataset(
+            "hotpot_qa",
+            "fullwiki",
+            storage_options={
+                "client_kwargs": {
+                    "timeout": aiohttp.ClientTimeout(total=cfg.dataset_download_timeout)
+                }
+            },
+        )
+
+        questions = dataset['train']['question'] + dataset['validation']['question']
+        answers = dataset['train']['answer'] + dataset['validation']['answer']
+        golden_sources = dataset['train']['context'] + dataset['validation']['context']
+        supporting_facts = dataset['train']['supporting_facts'] + dataset['validation']['supporting_facts']
+        levels = dataset['train']['level'] + dataset['validation']['level']
+        source_sentences = []
+        title2sentences = {}
+        titles = []
+        title2start = {}
+        title2id = {}
+        id = 0
+        cur = 0
+        
+        # 第一步：收集所有文档信息
+        for sup, source in zip(supporting_facts, golden_sources):
+            title = source['title']
+            sentence = source['sentences']
+
+            if experiment_1:
+                if id < test_all_number_documents:
+                    GlobalVar.set_query_number(GlobalVar.get_query_number() + 1)
+
+            for t, s in zip(title, sentence):
+                if t not in title2sentences:
+                    title2sentences[t] = s
+                    title2start[t] = cur
+                    titles.append(t)
+                    source_sentences.extend(s)
+                    cur += len(s)
+                    title2id[t] = id
+                    id += 1
+
+        # 获取测试数据中涉及的所有文档标题
+        indexes = list(range(len(questions)))
+        random.shuffle(indexes)
+        train_indexes = indexes[:int(len(indexes)*0.9)]
+        valid_indexes = indexes[int(len(indexes)*0.9):int(len(indexes)*0.99)]
+        test_indexes = indexes[int(len(indexes)*0.99):]
+        
+        # 筛选medium级别的测试数据
+        dif_test_indexes = [
+            i for i in test_indexes 
+            if i < len(levels) and levels[i] == 'medium'
+        ]
+        
+        # 收集测试数据涉及的文档标题
+        test_doc_titles = set()
+        for i in dif_test_indexes:
+            sup_fact = supporting_facts[i]
+            source = golden_sources[i]
+            title_list = source['title']
+            for t in title_list:
+                if t in sup_fact['title']:  # 只取支持事实相关的文档
+                    test_doc_titles.add(t)
+        
+        # 构建文档列表：先包含测试相关的文档，再补充其他文档
+        test_documents = []
+        other_documents = []
+        
+        # 按照 get_documents 的方式创建所有文档
+        all_titles = list(title2sentences.keys())
+        
+        # 先处理测试相关的文档
+        for title in all_titles:
+            sentence_list = title2sentences[title]
+            doc = Document(
+                text=' '.join(sentence_list), 
+                metadata={'title': title, 'id': title2id[title]},
+                doc_id=str(title2id[title])
+            )
+            
+            if title in test_doc_titles:
+                test_documents.append(doc)
+            else:
+                other_documents.append(doc)
+        
+        # 合并文档：测试文档在前，其他文档在后
+        documents = test_documents + other_documents
+        
+        # 只取前30000个文档
+        if len(documents) > 30000:
+            documents = documents[:30000]
+        
+        # 构建数据集分割
+        train_data = {}
+        valid_data = {}
+        test_data = {}
+        
+        train_data['question'], train_data['expected_answer'], train_data['golden_context_ids'], train_data['golden_context'] = build_split(
+            [answers[i] for i in train_indexes], 
+            [questions[i] for i in train_indexes], 
+            [supporting_facts[i] for i in train_indexes], 
+            title2id, 
+            title2sentences
+        )
+        
+        valid_data['question'], valid_data['expected_answer'], valid_data['golden_context_ids'], valid_data['golden_context'] = build_split(
+            [answers[i] for i in valid_indexes], 
+            [questions[i] for i in valid_indexes], 
+            [supporting_facts[i] for i in valid_indexes], 
+            title2id, 
+            title2sentences
+        )
+        
+        test_data['question'], test_data['expected_answer'], test_data['golden_context_ids'], test_data['golden_context'] = build_split(
+            [answers[i] for i in dif_test_indexes], 
+            [questions[i] for i in dif_test_indexes], 
+            [supporting_facts[i] for i in dif_test_indexes], 
+            title2id, 
+            title2sentences
+        )
+
+        return dict(
+            train_data=train_data,
+            valid_data=valid_data,
+            test_data=test_data,
+            sources=source_sentences,
+            titles=titles,
+            title2sentences=title2sentences,
+            title2start=title2start,
+            title2id=title2id,
+            documents=documents,  # 已经是测试文档优先的10000条
+            dataset=dataset
+        )
+    
+    elif dataset_name == "hotpot_qa_easy":
+        dataset = load_dataset(
+            "hotpot_qa",
+            "fullwiki",
+            storage_options={
+                "client_kwargs": {
+                    "timeout": aiohttp.ClientTimeout(total=cfg.dataset_download_timeout)
+                }
+            },
+        )
+
+        questions = dataset['train']['question'] + dataset['validation']['question']
+        answers = dataset['train']['answer'] + dataset['validation']['answer']
+        golden_sources = dataset['train']['context'] + dataset['validation']['context']
+        supporting_facts = dataset['train']['supporting_facts'] + dataset['validation']['supporting_facts']
+        levels = dataset['train']['level'] + dataset['validation']['level']
+        source_sentences = []
+        title2sentences = {}
+        titles = []
+        title2start = {}
+        title2id = {}
+        id = 0
+        cur = 0
+        
+        # 第一步：收集所有文档信息
+        for sup, source in zip(supporting_facts, golden_sources):
+            title = source['title']
+            sentence = source['sentences']
+
+            if experiment_1:
+                if id < test_all_number_documents:
+                    GlobalVar.set_query_number(GlobalVar.get_query_number() + 1)
+
+            for t, s in zip(title, sentence):
+                if t not in title2sentences:
+                    title2sentences[t] = s
+                    title2start[t] = cur
+                    titles.append(t)
+                    source_sentences.extend(s)
+                    cur += len(s)
+                    title2id[t] = id
+                    id += 1
+
+        # 获取测试数据中涉及的所有文档标题
+        indexes = list(range(len(questions)))
+        random.shuffle(indexes)
+        train_indexes = indexes[:int(len(indexes)*0.9)]
+        valid_indexes = indexes[int(len(indexes)*0.9):int(len(indexes)*0.99)]
+        test_indexes = indexes[int(len(indexes)*0.99):]
+        
+        # 筛选easy级别的测试数据
+        dif_test_indexes = [
+            i for i in test_indexes 
+            if i < len(levels) and levels[i] == 'easy'
+        ]
+        
+        # 收集测试数据涉及的文档标题
+        test_doc_titles = set()
+        for i in dif_test_indexes:
+            sup_fact = supporting_facts[i]
+            source = golden_sources[i]
+            title_list = source['title']
+            for t in title_list:
+                if t in sup_fact['title']:  # 只取支持事实相关的文档
+                    test_doc_titles.add(t)
+        
+        # 构建文档列表：先包含测试相关的文档，再补充其他文档
+        test_documents = []
+        other_documents = []
+        
+        # 按照 get_documents 的方式创建所有文档
+        all_titles = list(title2sentences.keys())
+        
+        # 先处理测试相关的文档
+        for title in all_titles:
+            sentence_list = title2sentences[title]
+            doc = Document(
+                text=' '.join(sentence_list), 
+                metadata={'title': title, 'id': title2id[title]},
+                doc_id=str(title2id[title])
+            )
+            
+            if title in test_doc_titles:
+                test_documents.append(doc)
+            else:
+                other_documents.append(doc)
+        
+        # 合并文档：测试文档在前，其他文档在后
+        documents = test_documents + other_documents
+        
+        # 只取前30000个文档
+        if len(documents) > 30000:
+            documents = documents[:30000]
+        
+        # 构建数据集分割
+        train_data = {}
+        valid_data = {}
+        test_data = {}
+        
+        train_data['question'], train_data['expected_answer'], train_data['golden_context_ids'], train_data['golden_context'] = build_split(
+            [answers[i] for i in train_indexes], 
+            [questions[i] for i in train_indexes], 
+            [supporting_facts[i] for i in train_indexes], 
+            title2id, 
+            title2sentences
+        )
+        
+        valid_data['question'], valid_data['expected_answer'], valid_data['golden_context_ids'], valid_data['golden_context'] = build_split(
+            [answers[i] for i in valid_indexes], 
+            [questions[i] for i in valid_indexes], 
+            [supporting_facts[i] for i in valid_indexes], 
+            title2id, 
+            title2sentences
+        )
+        
+        test_data['question'], test_data['expected_answer'], test_data['golden_context_ids'], test_data['golden_context'] = build_split(
+            [answers[i] for i in dif_test_indexes], 
+            [questions[i] for i in dif_test_indexes], 
+            [supporting_facts[i] for i in dif_test_indexes], 
+            title2id, 
+            title2sentences
+        )
+
+        return dict(
+            train_data=train_data,
+            valid_data=valid_data,
+            test_data=test_data,
+            sources=source_sentences,
+            titles=titles,
+            title2sentences=title2sentences,
+            title2start=title2start,
+            title2id=title2id,
+            documents=documents,  # 已经是测试文档优先的10000条
+            dataset=dataset
+        )
+    
     elif dataset_name == "drop":
         """
         {
@@ -1074,13 +1482,7 @@ def generate_qa_from_folder(folder_path: str, output_file: str, num_questions_pe
             )
             
             # 获取 LLM 响应
-            for retry in range(3):
-                try:
-                    response = llm.complete(prompt)
-                    break
-                except Exception:
-                    if retry == 2:
-                        raise
+            response = llm.complete(prompt)
             
             # 解析响应中的 JSON
             try:
