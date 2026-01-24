@@ -250,7 +250,7 @@ def run(cli=True, custom_dataset=None):
         # Iterate questions and call Sim-RAG
         limit = cfg.test_init_total_number_documents if cfg.experiment_1 else cfg.n
 
-        sim_rag_output_path = 'sim_rag_results.json'
+        sim_rag_output_path = f'sim_rag_results_{cfg.dataset}.json'
         with open(sim_rag_output_path, 'w', encoding='utf-8') as f:
             f.write('[\n')
 
