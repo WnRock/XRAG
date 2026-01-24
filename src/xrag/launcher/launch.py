@@ -1,4 +1,5 @@
 import os
+import json
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
 from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core import Settings, PromptTemplate
@@ -248,17 +249,40 @@ def run(cli=True, custom_dataset=None):
         retriever = get_retriver(cfg.retriever, index, hierarchical_storage_context=hierarchical_storage_context, cfg=cfg)
         # Iterate questions and call Sim-RAG
         limit = cfg.test_init_total_number_documents if cfg.experiment_1 else cfg.n
-        for question, expected_answer, golden_context, golden_context_ids in zip(
+
+        sim_rag_output_path = 'sim_rag_results.json'
+        with open(sim_rag_output_path, 'w', encoding='utf-8') as f:
+            f.write('[\n')
+
+        first_entry = True
+        for idx, (question, expected_answer, golden_context, golden_context_ids) in enumerate(zip(
                 qa_dataset['test_data']['question'][:limit],
                 qa_dataset['test_data']['expected_answer'][:limit],
                 qa_dataset['test_data']['golden_context'][:limit],
                 qa_dataset['test_data']['golden_context_ids'][:limit]
-        ):
+        )):
+            entry_result = {
+                "index": idx,
+                "question": question,
+                "expected_answer": expected_answer,
+                "iteration_count": 0,
+                "retrieval_results": [],
+                "response": "",
+                "error": None
+            }
             try:
                 sim_out = run_simrag(question, retriever=retriever, cfg=cfg)
                 actual_response = sim_out["response"]
                 retrieval_context = sim_out["retrieved_texts"]
                 retrieval_ids = sim_out["retrieved_ids"]
+                all_turns = sim_out.get("all_turns", [])
+
+                entry_result["iteration_count"] = len(all_turns)
+                entry_result["response"] = actual_response
+                entry_result["retrieval_results"] = [
+                    {"id": rid, "text": txt} for rid, txt in zip(retrieval_ids, retrieval_context)
+                ]
+
                 # Build a lightweight response-like object to satisfy evaluators that expect .response and .source_nodes
                 class _Resp:
                     def __init__(self, text, texts):
@@ -271,9 +295,19 @@ def run(cli=True, custom_dataset=None):
                                          evalAgent)
                 evaluateResults.add(eval_result)
                 evaluateResults.print_results()
-            except Exception:
+            except Exception as e:
+                entry_result["error"] = str(e)
                 print(f"Error processing question: {question}")
-                continue
+
+            with open(sim_rag_output_path, 'a', encoding='utf-8') as f:
+                if not first_entry:
+                    f.write(',\n')
+                f.write(json.dumps(entry_result, ensure_ascii=False, indent=2))
+                first_entry = False
+
+        with open(sim_rag_output_path, 'a', encoding='utf-8') as f:
+            f.write('\n]\n')
+
         metrics.log_summary()
         return evaluateResults
     else:
