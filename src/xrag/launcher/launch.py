@@ -297,7 +297,7 @@ def run(cli=True, custom_dataset=None):
                 evaluateResults.print_results()
             except Exception as e:
                 entry_result["error"] = str(e)
-                print(f"Error processing question: {question}")
+                print(f"Error processing question: {question}. Error: {e}")
 
             with open(sim_rag_output_path, 'a', encoding='utf-8') as f:
                 if not first_entry:
