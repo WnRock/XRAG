@@ -293,6 +293,17 @@ def run(cli=True, custom_dataset=None):
                 eval_result = evaluating(question, response, actual_response, retrieval_context, retrieval_ids,
                                          expected_answer, golden_context, golden_context_ids, evaluateResults.metrics,
                                          evalAgent)
+                
+                entry_result["evaluation_metrics"] = {}
+                
+                for key, value in eval_result.results.items():
+                    if key in evaluateResults.metrics:
+                        entry_result["evaluation_metrics"][key] = value
+                
+                for metric_name, metric_value in eval_result.metrics_results.items():
+                    if metric_name in evaluateResults.metrics and metric_value["count"] > 0:
+                        entry_result["evaluation_metrics"][metric_name] = metric_value["score"]
+                
                 evaluateResults.add(eval_result)
                 evaluateResults.print_results()
             except Exception as e:
